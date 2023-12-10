@@ -16,6 +16,7 @@ GitHub account for deploying the workflow.
 Ansible and Terraform installed for local setup and testing.
 GitHub Workflow: Hetzner Deploy on PR
 This GitHub Action workflow is triggered on pull requests to the master branch and pushes to feature/* and bugfix/* branches. It includes steps for setting up Python, Ansible, and Terraform, and concludes with deploying the configuration on Hetzner Cloud.
+cidi/* branch allocated for workflow development and doesn't trigger any actions on push or pull requests.
 
 ### Key Steps:
 
