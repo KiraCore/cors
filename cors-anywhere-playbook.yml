@@ -90,9 +90,9 @@
         state: link
 
     - name: Remove Nginx default configuration from sites-enabled
-        ansible.builtin.file:
-          path: /etc/nginx/sites-enabled/default
-          state: absent
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
 
     - name: Remove Nginx default configuration from sites-available
       ansible.builtin.file:
