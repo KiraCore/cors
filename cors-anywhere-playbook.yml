@@ -1,83 +1,115 @@
----
 - name: Set up CORS Anywhere Server with SSL from Let's Encrypt
   hosts: all
   remote_user: root
-  become: yes
-  become_user: root
   tasks:
     - name: Update and upgrade apt packages
-      apt:
-        update_cache: yes
+      ansible.builtin.apt:
+        update_cache: true
         upgrade: dist
 
     - name: Install Node.js, NPM, nginx, and software-properties-common
-      apt:
+      ansible.builtin.apt:
         name: "{{ item }}"
-        state: latest
+        state: present
       loop:
         - nodejs
         - npm
         - nginx
         - software-properties-common
 
-    - name: Add Certbot repository
-      apt:
-        name: certbot
+    - name: Add Certbot PPA
+      ansible.builtin.apt_repository:
+        repo: 'ppa:certbot/certbot'
         state: present
-      become: yes
 
     - name: Install Certbot
-      apt:
+      ansible.builtin.apt:
         name: certbot
-        state: latest
-    
+        state: present
+
     - name: Install Certbot Nginx plugin
-      apt:
+      ansible.builtin.apt:
         name: python3-certbot-nginx
         state: present
 
     - name: Obtain SSL certificate from Let's Encrypt
-      shell: certbot --nginx -d cors.kira.network --non-interactive --agree-tos --email hello@kira.network
-      args:
+      ansible.builtin.command:
+        cmd: certbot --nginx -d cors.kira.network --non-interactive --agree-tos --email hello@kira.network
         creates: /etc/letsencrypt/live/cors.kira.network/fullchain.pem
+      register: certbot_result
+      failed_when: certbot_result.rc not in [0, 1]
+      changed_when: certbot_result.rc == 0
       when: not ansible_check_mode
 
-    - name: Clone CORS Anywhere repository
-      git:
+    - name: Clone CORS Anywhere repository at a specific tag
+      ansible.builtin.git:
         repo: 'https://github.com/Rob--W/cors-anywhere.git'
         dest: /opt/cors-anywhere
-        clone: yes
-        update: yes
+        version: '0.4.4'  # Check for updated ver
+        clone: true
+        update: true
+
 
     - name: Install CORS Anywhere dependencies
-      npm:
+      community.general.npm:
         path: /opt/cors-anywhere
 
+    - name: Create CORS Anywhere Systemd service file
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/cors-anywhere.service
+        content: |
+          [Unit]
+          Description=CORS Anywhere Service
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=nobody
+          WorkingDirectory=/opt/cors-anywhere
+          Environment="PORT=8080"
+          ExecStart=/usr/bin/node /opt/cors-anywhere/server.js
+          Restart=on-failure
+          RestartSec=10
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+
+
+    - name: Reload Systemd to recognize CORS Anywhere service
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Enable CORS Anywhere service to start on boot
+      ansible.builtin.systemd:
+        name: cors-anywhere
+        enabled: true
+
     - name: Create Nginx configuration for CORS Anywhere
-      blockinfile:
+      ansible.builtin.blockinfile:
         path: /etc/nginx/sites-available/cors-anywhere
-        create: yes
+        create: true
         block: |
           server {
               listen 443 ssl;
-              server_name cors.kira.network www.cors.kira.network.com;  
+              server_name cors.kira.network www.cors.kira.network;
 
-              ssl_certificate /etc/letsencrypt/live/cors.kira.network/fullchain.pem;  
-              ssl_certificate_key /etc/letsencrypt/live/cors.kira.network/privkey.pem;  
+              ssl_certificate /etc/letsencrypt/live/cors.kira.network/fullchain.pem;
+              ssl_certificate_key /etc/letsencrypt/live/cors.kira.network/privkey.pem;
 
-              ssl_protocols TLSv1.2 TLSv1.3;  
+              ssl_protocols TLSv1.2 TLSv1.3;
               ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256...';
               ssl_prefer_server_ciphers on;
 
               location / {
-                  proxy_pass http://localhost:1234;  # Replace with CORS-Anywhere address
+                  proxy_pass http://localhost:8080;
                   proxy_set_header Host $host;
                   proxy_set_header X-Real-IP $remote_addr;
                   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                   proxy_set_header X-Forwarded-Proto $scheme;
               }
           }
-
+        mode: '0644'
 
     - name: Enable Nginx CORS Anywhere configuration
       ansible.builtin.file:
@@ -95,16 +127,21 @@
         path: /etc/nginx/sites-available/default
         state: absent
 
+    - name: Start CORS Anywhere service
+      ansible.builtin.systemd:
+        name: cors-anywhere
+        state: started
+
+    - name: Check CORS Anywhere service status
+      ansible.builtin.systemd:
+        name: cors-anywhere
+      register: service_status
+
+    - name: Display CORS Anywhere service status
+      ansible.builtin.debug:
+        msg: "Status of CORS Anywhere service: {{ service_status.status }}"
+
     - name: Reload Nginx to apply new configuration
-      systemd:
+      ansible.builtin.systemd:
         name: nginx
         state: reloaded
-
-    - name: Start CORS Anywhere server
-      shell: 'cd /opt/cors-anywhere && npm start &'
-      async: 15
-      poll: 0
-      when: not ansible_check_mode
-
-
-
