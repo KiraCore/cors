@@ -17,20 +17,14 @@
         - nginx
         - software-properties-common
 
-    - name: Add Certbot PPA
-      ansible.builtin.apt_repository:
-        repo: 'ppa:certbot/certbot'
-        state: present
-
-    - name: Install Certbot
+    - name: Install Certbot and Certbot Nginx plugin
       ansible.builtin.apt:
-        name: certbot
+        name: "{{ item }}"
         state: present
-
-    - name: Install Certbot Nginx plugin
-      ansible.builtin.apt:
-        name: python3-certbot-nginx
-        state: present
+      loop:
+        - certbot
+        - python3-certbot-nginx
+      when: ansible_distribution == 'Ubuntu' and ansible_distribution_major_version >= '20'
 
     - name: Obtain SSL certificate from Let's Encrypt
       ansible.builtin.command:
